@@ -34,7 +34,8 @@ const loadImage = path => {
 
 export default class Sketch {
   constructor(options) {
-    this.size = 512;
+    this.init = false;
+    this.size = 64;
     this.number = this.size * this.size;
     this.container = options.dom;
     this.scene = new THREE.Scene();
@@ -71,8 +72,8 @@ export default class Sketch {
       this.getPixelDataFromImage(t1)
       this.mouseEvents()
       this.getButtonAction()
-      // this.setupFBO1()
-      this.setupFBO()
+      this.setupFBO1()
+      // this.setupFBO()
       this.addObjects();
       this.setupResize();
       this.render();
@@ -226,8 +227,6 @@ export default class Sketch {
   }
 
   setupFBO() {
-    
-
     // create data Texture
     const data = new Float32Array(4 * this.number);
     for (let i = 0; i < this.size; i++) {
@@ -266,6 +265,102 @@ export default class Sketch {
             uMouse: { value: new THREE.Vector3(0,0,0) },
             uProgress: { value: 0 },
             uTime: { value: 0 },
+            uSource: { value: THREE.Vector3(0,0,0) },
+            uRenderMode: { value: 0 },
+            uCurrentPosition: { value: this.data1 },
+            uDirections: { value: null },
+        },
+        vertexShader: simVertex,
+        fragmentShader: simFragment,
+    })
+    this.simMesh = new THREE.Mesh(geo, this.simMaterial);
+    this.sceneFBO.add(this.simMesh);
+
+    this.renderTarget = new THREE.WebGLRenderTarget(this.size, this.size, {
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter,
+        format: THREE.RGBAFormat,
+        type: THREE.FloatType,
+    })
+
+    this.directions = new THREE.WebGLRenderTarget(this.size, this.size, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.FloatType,
+    })
+
+    this.initPos = new THREE.WebGLRenderTarget(this.size, this.size, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.FloatType,
+    })
+
+    this.renderTarget1 = new THREE.WebGLRenderTarget(this.size, this.size, {
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter,
+        format: THREE.RGBAFormat,
+        type: THREE.FloatType,
+    })
+  }
+
+  setupFBO1() {
+    // create data Texture
+    const data = new Float32Array(4 * this.number);
+    for (let i = 0; i < this.size; i++) {
+      for (let j = 0; j < this.size; j++) {
+        const index = i * this.size + j;
+        data[4 * index] = lerp(-0.5, 0.5, j / (this.size - 1));
+        data[4 * index + 1] = lerp(-0.5, 0.5, i / (this.size - 1));
+        data[4 * index + 2] = 0;
+        data[4 * index + 3] = 1;
+      }
+    }
+
+    this.positions = new THREE.DataTexture(
+      data,
+      this.size,
+      this.size,
+      THREE.RGBAFormat,
+      THREE.FloatType
+    );
+    this.positions.needsUpdate = true;
+
+    // create FBO scene
+    this.sceneFBO = new THREE.Scene();
+    let viewArea = this.size/2 + 0.01
+    this.cameraFBO = new THREE.OrthographicCamera(-viewArea, viewArea, viewArea, -viewArea, -2, 2);
+    this.cameraFBO.position.z = 1;
+    this.cameraFBO.lookAt(new THREE.Vector3(0,0,0));
+
+    let geo = new THREE.PlaneGeometry(2,2,2,2);
+    this.geo = new THREE.BufferGeometry();
+    let pos = new Float32Array(this.number * 3);
+    let uv = new Float32Array(this.number * 2);
+    for (let i = 0; i < this.size; i++) {
+      for (let j = 0; j < this.size; j++) {
+        const index = i * this.size + j;
+
+        pos[3 * index] = this.size*lerp(-0.5, 0.5, j / (this.size - 1));
+        pos[3 * index + 1] = this.size*lerp(-0.5, 0.5, i / (this.size - 1));
+        pos[3 * index + 2] = 0;
+
+        uv[2 * index] = j / (this.size - 1);
+        uv[2 * index + 1] = i / (this.size - 1);
+      }
+    }
+    this.geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    this.geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+
+    // this.geo.setDrawRange(3, 10);
+
+    this.simMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            time: { value: 0 },
+            uMouse: { value: new THREE.Vector3(0,0,0) },
+            uProgress: { value: 0 },
+            uTime: { value: 0 },
             uCurrentPosition: { value: this.data1 },
             uOriginalPosition: { value: this.data1 },
             uOriginalPosition1: { value: this.data2 },
@@ -273,7 +368,7 @@ export default class Sketch {
         vertexShader: simVertex,
         fragmentShader: simFragment,
     })
-    this.simMesh = new THREE.Mesh(geo, this.simMaterial);
+    this.simMesh = new THREE.Points(this.geo, this.simMaterial);
     this.sceneFBO.add(this.simMesh);
 
     this.renderTarget = new THREE.WebGLRenderTarget(this.size, this.size, {
@@ -290,89 +385,6 @@ export default class Sketch {
         type: THREE.FloatType,
     })
   }
-
-  // setupFBO1() {
-    
-
-  //   // create data Texture
-  //   const data = new Float32Array(4 * this.number);
-  //   for (let i = 0; i < this.size; i++) {
-  //     for (let j = 0; j < this.size; j++) {
-  //       const index = i * this.size + j;
-  //       data[4 * index] = lerp(-0.5, 0.5, j / (this.size - 1));
-  //       data[4 * index + 1] = lerp(-0.5, 0.5, i / (this.size - 1));
-  //       data[4 * index + 2] = 0;
-  //       data[4 * index + 3] = 1;
-  //     }
-  //   }
-
-  //   this.positions = new THREE.DataTexture(
-  //     data,
-  //     this.size,
-  //     this.size,
-  //     THREE.RGBAFormat,
-  //     THREE.FloatType
-  //   );
-  //   this.positions.needsUpdate = true;
-
-  //   // create FBO scene
-  //   this.sceneFBO = new THREE.Scene();
-  //   let viewArea = this.size/2 + 0.01
-  //   this.cameraFBO = new THREE.OrthographicCamera(-viewArea, viewArea, viewArea, -viewArea, -2, 2);
-  //   this.cameraFBO.position.z = 1;
-  //   this.cameraFBO.lookAt(new THREE.Vector3(0,0,0));
-
-  //   let geo = new THREE.PlaneGeometry(2,2,2,2);
-  //   this.geo = new THREE.BufferGeometry();
-  //   let pos = new Float32Array(this.number * 3);
-  //   let uv = new Float32Array(this.number * 2);
-  //   for (let i = 0; i < this.size; i++) {
-  //     for (let j = 0; j < this.size; j++) {
-  //       const index = i * this.size + j;
-
-  //       pos[3 * index] = this.size*lerp(-0.5, 0.5, j / (this.size - 1));
-  //       pos[3 * index + 1] = this.size*lerp(-0.5, 0.5, i / (this.size - 1));
-  //       pos[3 * index + 2] = 0;
-
-  //       uv[2 * index] = j / (this.size - 1);
-  //       uv[2 * index + 1] = i / (this.size - 1);
-  //     }
-  //   }
-  //   this.geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  //   this.geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-
-  //   // this.geo.setDrawRange(3, 10);
-
-  //   this.simMaterial = new THREE.ShaderMaterial({
-  //       uniforms: {
-  //           time: { value: 0 },
-  //           uMouse: { value: new THREE.Vector3(0,0,0) },
-  //           uProgress: { value: 0 },
-  //           uTime: { value: 0 },
-  //           uCurrentPosition: { value: this.data1 },
-  //           uOriginalPosition: { value: this.data1 },
-  //           uOriginalPosition1: { value: this.data2 },
-  //       },
-  //       vertexShader: simVertex,
-  //       fragmentShader: simFragment,
-  //   })
-  //   this.simMesh = new THREE.Points(this.geo, this.simMaterial);
-  //   this.sceneFBO.add(this.simMesh);
-
-  //   this.renderTarget = new THREE.WebGLRenderTarget(this.size, this.size, {
-  //       minFilter: THREE.NearestFilter,
-  //       magFilter: THREE.NearestFilter,
-  //       format: THREE.RGBAFormat,
-  //       type: THREE.FloatType,
-  //   })
-
-  //   this.renderTarget1 = new THREE.WebGLRenderTarget(this.size, this.size, {
-  //       minFilter: THREE.NearestFilter,
-  //       magFilter: THREE.NearestFilter,
-  //       format: THREE.RGBAFormat,
-  //       type: THREE.FloatType,
-  //   })
-  // }
 
   resize() {
     this.width = this.container.offsetWidth;
@@ -423,17 +435,22 @@ export default class Sketch {
     this.mesh = new THREE.Points(this.geometry, this.material);
     this.scene.add(this.mesh);
 
-    // this.debugPlane = new THREE.Mesh(
-    //   new THREE.PlaneGeometry(1, 1, 1, 1),
-    //   new THREE.MeshBasicMaterial({
-    //     map: new THREE.TextureLoader().load(t1)
-    //   })
-    // )
-    // this.scene.add(this.debugPlane)
+    this.debugPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1, 1, 1),
+      new THREE.MeshBasicMaterial({
+        map: new THREE.TextureLoader().load(t1)
+      })
+    )
+    this.scene.add(this.debugPlane)
   }
 
   render() {
     this.time += 0.05;
+    if(!this.init) {
+      this.init = true;
+      this.renderer.setRenderTarget(this.directions);
+      this.renderer.render(this.sceneFBO, this.cameraFBO);
+    }
 
     this.material.uniforms.time.value = this.time;
 
@@ -441,6 +458,7 @@ export default class Sketch {
     this.renderer.setRenderTarget(this.renderTarget);
     this.renderer.render(this.sceneFBO, this.cameraFBO);
 
+    // Render scene
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.scene, this.camera);
 
@@ -454,7 +472,7 @@ export default class Sketch {
     this.simMaterial.uniforms.uCurrentPosition.value = this.renderTarget1.texture;
     this.simMaterial.uniforms.uTime.value = this.time;
 
-    // this.debugPlane.material.map = this.renderTarget.texture;
+    this.debugPlane.material.map = this.renderTarget.texture;
 
     window.requestAnimationFrame(this.render.bind(this));
   }
