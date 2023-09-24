@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js"
 
 import vertexShader from "./shaders/vertex.glsl";
 import fragmentShader from "./shaders/fragment.glsl";
@@ -10,9 +11,9 @@ import GUI from 'lil-gui';
 
 import t1 from '../logo.png'
 import t2 from '../super.png'
-
-
 import texture from "../test.jpg";
+
+import bird from "../bird.glb?url"
 
 function lerp(a, b, n) {
   return (1 - n) * a + n * b;
@@ -35,6 +36,7 @@ const loadImage = path => {
 export default class Sketch {
   constructor(options) {
     this.init = false;
+    this.v = new THREE.Vector3(0, 0, 0)
     this.currentParticles = 0;
     this.size = 64;
     this.number = this.size * this.size;
@@ -65,16 +67,41 @@ export default class Sketch {
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
 
+    this.loader = new GLTFLoader();
+
     this.time = 0;
-    this.setupSettings()
-    Promise.all([this.getPixelDataFromImage(t1), this.getPixelDataFromImage(t2)]).then((textures) => {
-      this.data1 = this.getPointsOnSphere()
-      this.data2 = this.getPointsOnSphere()
-      this.getPixelDataFromImage(t1)
-      this.mouseEvents()
-      this.getButtonAction()
-      // this.setupFBO1()
-      this.setupFBO()
+    this.setupSettings();
+    this.emitters = [];
+    Promise.all([
+      // this.getPixelDataFromImage(t1), 
+      // this.getPixelDataFromImage(t2)
+      this.loader.loadAsync(bird),
+    ]).then(([model]) => {
+      this.model = model.scene
+      this.scene.add(this.model)
+
+      this.model.traverse(m => {
+        if(m.isMesh && m.name.includes('emitter')) {
+          this.emitters.push({
+            mesh: m,
+            prev: m.position.clone(), 
+            dir: new THREE.Vector3(0, 0, 0)
+          })
+          m.visible = false;
+          m.material = new THREE.MeshBasicMaterial({
+            color: 0xff0000
+          })
+        }
+      })
+
+      this.mixer = new THREE.AnimationMixer(this.model);
+      this.mixer.clipAction(model.animations[0]).play();
+      this.data1 = this.getPointsOnSphere();
+      this.data2 = this.getPointsOnSphere();
+      this.getPixelDataFromImage(t1);
+      this.mouseEvents();
+      this.getButtonAction();
+      this.setupFBO();
       this.addObjects();
       this.setupResize();
       this.render();
@@ -467,7 +494,7 @@ export default class Sketch {
         color: 0xff0000
       })
     );
-    this.scene.add(this.emitter);
+    // this.scene.add(this.emitter);
 
     this.emitterDir = new THREE.Vector3(0, 0, 0)
     this.emitterPrev = new THREE.Vector3(0, 0, 0)
@@ -509,32 +536,43 @@ export default class Sketch {
 
     // Begin Emitter
     let emit = 5;
-    this.emitterDir = this.emitter.position.clone().sub(this.emitterPrev).multiplyScalar(100)
-    this.geo.setDrawRange(this.currentParticles, emit);
     this.renderer.autoClear = false;
 
-    // Directions
-    this.simMaterial.uniforms.uRenderMode.value = 1;
-    this.simMaterial.uniforms.uDirections.value = null;
-    this.simMaterial.uniforms.uCurrentPosition.value = null;
-    this.simMaterial.uniforms.uSource.value = this.emitterDir;
-    this.renderer.setRenderTarget(this.directions);
-    this.renderer.render(this.sceneFBO, this.cameraFBO);
+    this.emitters.forEach((emitter) => {
+      emitter.mesh.getWorldPosition(this.v);
+
+      emitter.dir = this.v
+        .clone()
+        .sub(emitter.prev)
+        .multiplyScalar(100)
+      this.geo.setDrawRange(this.currentParticles, emit);
     
 
-    // Positions
-    this.simMaterial.uniforms.uRenderMode.value = 2;
-    this.simMaterial.uniforms.uSource.value = this.emitter.position;
-    this.renderer.setRenderTarget(this.renderTarget);
-    this.renderer.render(this.sceneFBO, this.cameraFBO);
+      // Directions
+      this.simMaterial.uniforms.uRenderMode.value = 1;
+      this.simMaterial.uniforms.uDirections.value = null;
+      this.simMaterial.uniforms.uCurrentPosition.value = null;
+      this.simMaterial.uniforms.uSource.value = emitter.dir;
+      this.renderer.setRenderTarget(this.directions);
+      this.renderer.render(this.sceneFBO, this.cameraFBO);
+    
+
+      // Positions
+      this.simMaterial.uniforms.uRenderMode.value = 2;
+      this.simMaterial.uniforms.uSource.value = this.v;
+      this.renderer.setRenderTarget(this.renderTarget);
+      this.renderer.render(this.sceneFBO, this.cameraFBO);
  
 
-    this.currentParticles += emit;
-    if (this.currentParticles > this.number) {
-      this.currentParticles = 0;
-    }
+      this.currentParticles += emit;
+      if (this.currentParticles > this.number) {
+        this.currentParticles = 0;
+      }
+    
+      emitter.prev = this.v.clone();
+    })
+    
     this.renderer.autoClear = true;
-    this.emitterPrev = this.emitter.position.clone()
     // End of Emitter
 
     // Render scene
@@ -554,6 +592,10 @@ export default class Sketch {
     this.debugPlane.material.map = this.renderTarget.texture;
 
     window.requestAnimationFrame(this.render.bind(this));
+
+    if(this.mixer) {
+      this.mixer.update(0.01)
+    }
   }
 }
 
