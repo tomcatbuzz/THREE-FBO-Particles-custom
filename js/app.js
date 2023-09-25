@@ -13,7 +13,8 @@ import t1 from '../logo.png'
 import t2 from '../super.png'
 import texture from "../test.jpg";
 
-import bird from "../bird.glb?url"
+// import bird from "../bird.glb?url"
+import bird from "../bird1.glb?url"
 
 function lerp(a, b, n) {
   return (1 - n) * a + n * b;
@@ -37,8 +38,9 @@ export default class Sketch {
   constructor(options) {
     this.init = false;
     this.v = new THREE.Vector3(0, 0, 0)
+    this.v1 = new THREE.Vector3(0, 0, 0)
     this.currentParticles = 0;
-    this.size = 64;
+    this.size = 256;
     this.number = this.size * this.size;
     this.container = options.dom;
     this.scene = new THREE.Scene();
@@ -61,7 +63,7 @@ export default class Sketch {
       70,
       this.width / this.height,
       0.01,
-      10
+      100
     );
     this.camera.position.z = 2;
 
@@ -540,6 +542,8 @@ export default class Sketch {
 
     this.emitters.forEach((emitter) => {
       emitter.mesh.getWorldPosition(this.v);
+      this.v1 = this.v.clone()
+      let flip = Math.random()>0.5;
 
       emitter.dir = this.v
         .clone()
@@ -552,6 +556,9 @@ export default class Sketch {
       this.simMaterial.uniforms.uRenderMode.value = 1;
       this.simMaterial.uniforms.uDirections.value = null;
       this.simMaterial.uniforms.uCurrentPosition.value = null;
+      if(flip) {
+        emitter.dir.x *=-1;
+      }
       this.simMaterial.uniforms.uSource.value = emitter.dir;
       this.renderer.setRenderTarget(this.directions);
       this.renderer.render(this.sceneFBO, this.cameraFBO);
@@ -559,7 +566,10 @@ export default class Sketch {
 
       // Positions
       this.simMaterial.uniforms.uRenderMode.value = 2;
-      this.simMaterial.uniforms.uSource.value = this.v;
+      if(flip) {
+        this.v1.x *=-1
+      }
+      this.simMaterial.uniforms.uSource.value = this.v1;
       this.renderer.setRenderTarget(this.renderTarget);
       this.renderer.render(this.sceneFBO, this.cameraFBO);
  
