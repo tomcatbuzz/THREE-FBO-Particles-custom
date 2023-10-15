@@ -65,7 +65,7 @@ export default class Sketch {
       0.01,
       100
     );
-    this.camera.position.z = 2;
+    this.camera.position.z = 20;
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
 
